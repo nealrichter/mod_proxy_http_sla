@@ -1,0 +1,63 @@
+Hacking Apache's mod_proxy_http to enforce an SLA
+
+Let's say you have a web-service exposing ReST APIs for your awesome data processor. 
+It has data input/output APIs of various kinds. The software architecture consists 
+of front-end apache servers and back-end tomcat plus various data stores. Apache's 
+mod_proxy and some load balancer (HAProxy, mod_proxy_balancer) pushes the incoming 
+requests to backend servers.
+
+A client wants a guarantee that your APIs will accept requests and return valid data 
+or response codes within XXms for 95% of requests (see Wikipedia's SLA for other 
+examples of service guarantees). How can one be absolutely sure that the SLA is met? 
+Now add in the wrinkle that there might be different SLAs for the various APIs. In 
+addition, the SLA could specify that as close to 100% as possible of the requests
+ return HTTP codes within the 2xx range.. suppressing any 3xx, 4xx or 5xx codes from 
+coming back to the outside world.
+
+The issues with making apache do this are as follows:
+
+    * ProxyTimeout is global or scoped to the particular vhost
+    * ErrorDocuments still return the error code (503, 404, etc)
+    * No way to tie ErrorDocuments and ProxyTimeouts to particular requests.
+
+
+A key insight from Ronald Park is to use mod_rewrite and then pass various environment
+ arguments to mod_proxy that are specific to the URL being addressed by mod_rewrite. 
+This was the approach taken by Ronald Park in his attempts to solve this problem in 
+apache 2.0.x here and here.
+
+The below example is a rewrite rule that makes no changes to the URL itself for a JS 
+API presumably returning data in JSON.
+
+RewriteRule ^/api/(.*).js\?*(.*)$ http://backendproxy/api/$1.js?$2 [P,QSA,E=proxy-timeout:900ms,E=error-suppress:true,E=error-headers:/errorapi.js.HTTP,E=error-document:/errorapi.js]
+
+With the SLA enforcement modifications enabled, the URL will return data from the 
+backend system within 900ms or a timeout occurs. At this point apache will stop 
+waiting for the backend response and serve back the static files /errorapi.js.HTTP 
+as HTTP headers and /errorapi.js as contents.
+
+$cat /var/www/html/errorapi.js.HTTP
+Status: 204
+Content-type: application/javascript
+
+$cat /var/www/html/errorapi.js
+var xxx_api_data={data:[]}; /* ERR */
+
+There are four environment variables the SLA hack looks for:
+
+    * proxy-timeout: - time in seconds or milliseconds to wait until timing out
+    * error-suppress: - true/false switch on suppressing all non 2xx errors from the backend.
+    * error-headers: - file of syntax correct HTTP headers to return to the client
+    * error-document: - file of content body to be returned to the client
+
+Leaving off the proxy-timeout will only suppress errors from the backend after the global 
+timeout occurs. Leaving off error-suppress:true will ensure that the 5xx timeout error from
+ mod_proxy_http is returned intact to the client.
+
+There are two versions checked into github for Ubuntu 9.04's apache2 2.2.11 and Centos el5.2's 
+httpd 2.2.3-11. It's advisable to diff the changes with the 'stock' file and likely re-do hack 
+code in your version of apache 2.2. See Ron Park's code for 2.0.x and fold in the other mods 
+supporting error-suppress etc.
+
+The hack is being tested in a production environment, stay tuned. This will get posted to the 
+apache-dev list..hopefully with responses suggesting improvements. 
