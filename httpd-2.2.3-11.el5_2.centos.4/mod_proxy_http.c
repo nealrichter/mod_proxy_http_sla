@@ -24,7 +24,7 @@ static apr_status_t ap_proxy_http_cleanup(const char *scheme,
                                           request_rec *r,
                                           proxy_conn_rec *backend);
 
-/* Neal's Hack prototypes for new functions */
+/* Neal's SLA Hack prototypes for new functions */
 static int ap_proxy_suppress_errors_check(request_rec *r);
 static int ap_proxytimeout_default_response(request_rec *r,  const char *headers_path, const char *document_path);
 static int ap_proxy_connection_setup_custom_timeout(request_rec *r,  proxy_conn_rec *backend, 
@@ -1398,7 +1398,7 @@ apr_status_t ap_proxy_http_process_response(apr_pool_t * p, request_rec *r,
                          r->status);
         }
 
-        /* Neal's Hack to suppress errors */
+        /* Neal's SLA Hack to suppress errors */
         if (!((r->status > 199) && (r->status < 300)) && ((r->status != DONE) && (r->status != OK)) && ap_proxy_suppress_errors_check(r)) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
                              "proxy: (neal) found bad response, throwing HTTP_BAD_GATEWAY");
@@ -1605,7 +1605,7 @@ apr_status_t ap_proxy_http_cleanup(const char *scheme, request_rec *r,
     return OK;
 }
 
-/* Neal's Hack This really should be in proxy_util or utilize some built in function 
+/* Neal's SLA Hack This really should be in proxy_util or utilize some built in function 
  * Handles the on-error default response 
  * Improvements?:
  *   - setup redirect/forward to mod_asis?
@@ -1648,7 +1648,7 @@ static int ap_proxytimeout_default_response(request_rec *r,  const char *headers
     return OK;
 }
 
-/* Neal's Hack This really should be in proxy_util or utilize some built in function 
+/* Neal's SLA Hack This really should be in proxy_util or utilize some built in function 
  * Hat-tip Ronald Park for example implementation in apache 2.0.63 
  */
 static int ap_proxy_connection_setup_custom_timeout(request_rec *r,  proxy_conn_rec *backend, 
@@ -1704,7 +1704,7 @@ static int ap_proxy_connection_setup_custom_timeout(request_rec *r,  proxy_conn_
 	return OK;   
 }
 
-/* Neal's Hack This really should be in proxy_util or utilize some built in function 
+/* Neal's SLA Hack This really should be in proxy_util or utilize some built in function 
  * check for error suppression = true on this request
  */
 static int ap_proxy_suppress_errors_check(request_rec *r)
@@ -1722,7 +1722,7 @@ static int ap_proxy_suppress_errors_check(request_rec *r)
        return 0;
 }
 
-/* Neal's Hack This really should be in proxy_util or utilize some built in function 
+/* Neal's SLA Hack This really should be in proxy_util or utilize some built in function 
  * perform any custom error handling for this request 
  */
 static int ap_proxytimeout_custom_error_handler(request_rec *r, int current_status)
@@ -1898,7 +1898,7 @@ static int proxy_http_handler(request_rec *r, proxy_worker *worker,
             goto cleanup;
     }
 
-    /* Step Three b: Neal's Hack - enforce URL specific proxy timeout */
+    /* Step Three b: Neal's SLA Hack - enforce URL specific proxy timeout */
     if (backend->connection) {
         old_timeout = (conf->timeout_set) ? conf->timeout : 0;
         new_timeout = 0;
@@ -1918,7 +1918,7 @@ static int proxy_http_handler(request_rec *r, proxy_worker *worker,
         goto cleanup;
 
 cleanup:
-    /* Step Six a: Neal's Hack - Enforce any custom error handling (on timeout or throwing HTTP_BAD_GATEWAY) */
+    /* Step Six a: Neal's SLA Hack - Enforce any custom error handling (on timeout or throwing HTTP_BAD_GATEWAY) */
     if (backend) {
         if (status != OK) {
         ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "proxy: (neal) status before ap_proxytimeout_custom_error_handler() (%d), http (%d)",status, r->status);
@@ -1927,7 +1927,7 @@ cleanup:
         }
     }
 
-    /* Step Six b: - Neal's Hack - Reset before the connection is released */
+    /* Step Six b: - Neal's SLA Hack - Reset before the connection is released */
     if (backend) {
        if((new_timeout > 0) && (old_timeout != new_timeout) && (old_timeout > 0))
           apr_socket_timeout_set(backend->sock, old_timeout);
