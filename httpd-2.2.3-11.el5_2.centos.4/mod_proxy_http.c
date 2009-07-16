@@ -1401,7 +1401,7 @@ apr_status_t ap_proxy_http_process_response(apr_pool_t * p, request_rec *r,
         /* Neal's SLA Hack to suppress errors */
         if (!((r->status > 199) && (r->status < 300)) && ((r->status != DONE) && (r->status != OK)) && ap_proxy_suppress_errors_check(r)) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
-                             "proxy: (neal) found bad response, throwing HTTP_BAD_GATEWAY");
+                             "proxy: ((tRP SLAHack)) found bad response, throwing HTTP_BAD_GATEWAY");
             return ap_proxyerror(r, HTTP_BAD_GATEWAY, "Suppressing error");
         }
 
@@ -1691,14 +1691,14 @@ static int ap_proxy_connection_setup_custom_timeout(request_rec *r,  proxy_conn_
             apr_socket_timeout_get(backend->sock, old_timeout);
             apr_socket_timeout_set(backend->sock, *new_timeout);
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
-                     "proxy: (neal) setting request timeout (%d) from (%d)", (int)*new_timeout, (int)*old_timeout);
+                     "proxy: ((tRP SLAHack)) setting request timeout (%d) from (%d)", (int)*new_timeout, (int)*old_timeout);
         }
         else
         {   
             apr_interval_time_t ct = -1;
             apr_socket_timeout_get(backend->sock, &ct);
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
-                     "proxy: (neal) keeping timeout (%d) new: (%d)", (int)ct, (int)*new_timeout);
+                     "proxy: ((tRP SLAHack)) keeping timeout (%d) new: (%d)", (int)ct, (int)*new_timeout);
         }
 
 	return OK;   
@@ -1774,7 +1774,7 @@ static int ap_proxytimeout_custom_error_handler(request_rec *r, int current_stat
              new_status = OK;
         }
 
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "(tRP SuperHack) suppressed (%d), returned (%d) for [%s]",
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "(tRP SLAHack) suppressed (%d), returned (%d) for [%s]",
                  current_http_status, r->status, ((r->uri == NULL)? "NULL" : r->uri));
     }
     else //do nothing
@@ -1921,9 +1921,9 @@ cleanup:
     /* Step Six a: Neal's SLA Hack - Enforce any custom error handling (on timeout or throwing HTTP_BAD_GATEWAY) */
     if (backend) {
         if (status != OK) {
-        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "proxy: (neal) status before ap_proxytimeout_custom_error_handler() (%d), http (%d)",status, r->status);
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "proxy: ((tRP SLAHack)) status before ap_proxytimeout_custom_error_handler() (%d), http (%d)",status, r->status);
         status = ap_proxytimeout_custom_error_handler(r, status);
-        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "proxy: (neal) status after ap_proxytimeout_custom_error_handler() (%d), http (%d)",status, r->status);
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "proxy: ((tRP SLAHack)) status after ap_proxytimeout_custom_error_handler() (%d), http (%d)",status, r->status);
         }
     }
 
