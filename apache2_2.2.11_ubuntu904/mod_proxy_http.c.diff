@@ -1,5 +1,5 @@
 --- mod_proxy_http.c.STOCK	2009-07-16 09:58:07.000000000 -0600
-+++ mod_proxy_http.c	2009-07-16 09:59:34.000000000 -0600
++++ mod_proxy_http.c	2010-01-19 11:39:11.000000000 -0700
 @@ -25,6 +25,13 @@
                                            request_rec *r,
                                            proxy_conn_rec *backend);
@@ -14,13 +14,14 @@
  /*
   * Canonicalise http-like URLs.
   *  scheme is the scheme for the URL
-@@ -1636,6 +1643,14 @@
+@@ -1636,6 +1643,15 @@
                               "undefined proxy interim response policy");
              }
          }
 +
 +        /* Neal's SLA Hack to suppress errors */
-+        if (!((r->status > 199) && (r->status < 300)) && ((r->status != DONE) && (r->status != OK)) && ap_proxy_suppress_errors_check(r)) {
++        /* Altered 1/19/2010 to preserve 3xx & 4xx status codes */
++        if (!((r->status > 199) && (r->status < 500)) && ((r->status != DONE) && (r->status != OK)) && ap_proxy_suppress_errors_check(r)) {
 +            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
 +                             "proxy: ((tRP SLAHack)) found bad response, throwing HTTP_BAD_GATEWAY");
 +            return ap_proxyerror(r, HTTP_BAD_GATEWAY, "Suppressing error");
@@ -29,7 +30,7 @@
          /* Moved the fixups of Date headers and those affected by
           * ProxyPassReverse/etc from here to ap_proxy_read_headers
           */
-@@ -1857,6 +1872,185 @@
+@@ -1857,6 +1873,185 @@
      return OK;
  }
  
@@ -215,7 +216,7 @@
  /*
   * This handles http:// URLs, and other URLs using a remote proxy over http
   * If proxyhost is NULL, then contact the server directly, otherwise
-@@ -1879,6 +2073,9 @@
+@@ -1879,6 +2074,9 @@
      proxy_conn_rec *backend = NULL;
      int is_ssl = 0;
      conn_rec *c = r->connection;
@@ -225,7 +226,7 @@
      /*
       * Use a shorter-lived pool to reduce memory usage
       * and avoid a memory leak
-@@ -1968,6 +2165,14 @@
+@@ -1968,6 +2166,14 @@
              goto cleanup;
      }
  
@@ -240,7 +241,7 @@
      /* Step Four: Send the Request */
      if ((status = ap_proxy_http_request(p, r, backend, backend->connection,
                                          conf, uri, url, server_portstr)) != OK)
-@@ -1979,9 +2184,23 @@
+@@ -1979,9 +2185,23 @@
                                                   conf, server_portstr)) != OK)
          goto cleanup;
  

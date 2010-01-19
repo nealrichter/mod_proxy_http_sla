@@ -1645,7 +1645,8 @@ apr_status_t ap_proxy_http_process_response(apr_pool_t * p, request_rec *r,
         }
 
         /* Neal's SLA Hack to suppress errors */
-        if (!((r->status > 199) && (r->status < 300)) && ((r->status != DONE) && (r->status != OK)) && ap_proxy_suppress_errors_check(r)) {
+        /* Altered 1/19/2010 to preserve 3xx & 4xx status codes */
+        if (!((r->status > 199) && (r->status < 500)) && ((r->status != DONE) && (r->status != OK)) && ap_proxy_suppress_errors_check(r)) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
                              "proxy: ((tRP SLAHack)) found bad response, throwing HTTP_BAD_GATEWAY");
             return ap_proxyerror(r, HTTP_BAD_GATEWAY, "Suppressing error");
