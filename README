@@ -61,3 +61,7 @@ supporting error-suppress etc.
 
 The hack is being tested in a production environment, stay tuned. This will get posted to the 
 apache-dev list..hopefully with responses suggesting improvements. 
+
+Notes as of Jan 19:
+- This mod has been in production for 6+ months and we love it.
+- A code modification has been made to preserve 3xx (redirect) and 4xx (client errors) response codes.
