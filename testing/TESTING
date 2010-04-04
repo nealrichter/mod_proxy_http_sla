@@ -1,0 +1,51 @@
+Testing this can be easy!
+
+0) Create /errordoc.js.HTTP (file in root htdocs) with these two lines
+    Status: 203
+    Content-type: application/javascript
+1) Create /errordoc.js (file in root htdocs) with this one lines
+    var error="Error suppressed with 203 Accepted"; /* ERR */
+1) Start the node.js testing app (or write your own like it)
+   $ node slatest.js 8888
+2) Examples of using the slatest.js
+   a) Return 200 after a 500ms Sleep
+   $ curl -v "http://localhost:8888/slatest?httpcode=200&sleep=500"
+   b) Return 204 after a 900ms Sleep
+   $ curl -v "http://localhost:8888/slatest?httpcode=204&sleep=900"
+   c) Return 302 after a 50ms Sleep. Redirects to /status
+   $ curl -v "http://localhost:8888/slatest?httpcode=302&sleep=50"
+   d) Return 404 after a 50ms Sleep.
+   $ curl -v "http://localhost:8888/slatest?httpcode=404&sleep=50"
+   e) Return 503 after a 1000ms Sleep.
+   $ curl -v "http://localhost:8888/slatest?httpcode=302&sleep=1000"
+3) Example testing scenarios with RewriteRules proxying to the slatest.js
+   Insert these into your httpd.conf or other appropriate file.
+   
+#not found (this file should not exist)
+RewriteRule ^/slatest/notfound.js\?*(.*)$ http://localhost:8888/slatest?httpcode=404&sleep=50 [P]
+#not found and suppress w/ 200 empty
+RewriteRule ^/slatest/notfoundsuppress.js\?*(.*)$ http://localhost:8888/slatest?httpcode=404&sleep=50 [P,E=error-suppress:true]
+#not found and suppress w/ custom
+RewriteRule ^/slatest/notfoundsuppresscustom.js\?*(.*)$ http://localhost:8888/slatest?httpcode=404&sleep=50 [P,E=error-suppress:true,E=error-headers:/errordoc.js.HTTP,E=error-document:/errordoc.js]
+
+#redirect this should work - redirect is not an error! 
+RewriteRule ^/slatest/redirect.js\?*(.*)$ http://localhost:8888/slatest?httpcode=302&sleep=50 [P,E=error-suppress:true]
+#slow redirect and suppress w/ 200 empty
+RewriteRule ^/slatest/redirectsuppress.js\?*(.*)$ http://localhost:8888/slatest?httpcode=302&sleep=900 [P,E=error-suppress:true,E=proxy-timeout:500ms]
+#slow redirect and suppress w/ custom
+RewriteRule ^/slatest/redirectsuppresscustom.js\?*(.*)$ http://localhost:8888/slatest?httpcode=302&sleep=900 [P,E=error-suppress:true,E=error-headers:/errordoc.js.HTTP,E=error-document:/errordoc.js]
+
+#sleepy 200 
+RewriteRule ^/slatest/sleepy.js\?*(.*)$ http://localhost:8888/slatest?httpcode=200&sleep=500 [P]
+#slow 200 and suppress w/ 200 empty
+RewriteRule ^/slatest/sleepysuppress.js\?*(.*)$ http://localhost:8888/slatest?httpcode=200&sleep=900 [P,E=error-suppress:true,E=proxy-timeout:500ms]
+#slow 200 and suppress w/ custom
+RewriteRule ^/slatest/sleepysuppresscustom.js\?*(.*)$ http://localhost:8888/slatest?httpcode=200&sleep=900 [P,E=error-suppress:true,E=error-headers:/errordoc.js.HTTP,E=error-document:/errordoc.js]
+
+#sleepy 503 
+RewriteRule ^/slatest/error.js\?*(.*)$ http://localhost:8888/slatest?httpcode=503&sleep=50 [P]
+#slow 503 and suppress w/ 503 empty
+RewriteRule ^/slatest/errorsuppress.js\?*(.*)$ http://localhost:8888/slatest?httpcode=503&sleep=900 [P,E=error-suppress:true,E=proxy-timeout:500ms]
+#slow 503 error and suppress w/ custom
+RewriteRule ^/slatest/errorsuppresscustom.js\?*(.*)$ http://localhost:8888/slatest?httpcode=503&sleep=900 [P,E=error-suppress:true,E=error-headers:/errordoc.js.HTTP,E=error-document:/errordoc.js]
+
