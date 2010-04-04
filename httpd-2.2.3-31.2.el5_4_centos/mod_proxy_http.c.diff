@@ -1,0 +1,271 @@
+--- mod_proxy_http.c.STOCK	2010-03-31 17:15:14.000000000 -0600
++++ mod_proxy_http.c	2010-03-31 17:19:16.000000000 -0600
+@@ -24,6 +24,14 @@
+                                           request_rec *r,
+                                           proxy_conn_rec *backend);
+ 
++/* Neal's SLA Hack prototypes for new functions */
++static int ap_proxy_suppress_errors_check(request_rec *r);
++static int ap_proxytimeout_default_response(request_rec *r,  const char *headers_path, const char *document_path);
++static int ap_proxy_connection_setup_custom_timeout(request_rec *r,  proxy_conn_rec *backend, 
++                        apr_interval_time_t * new_timeout, apr_interval_time_t * old_timeout);
++static int ap_proxytimeout_custom_error_handler(request_rec *r, int current_status);
++
++
+ /*
+  * Canonicalise http-like URLs.
+  *  scheme is the scheme for the URL
+@@ -1389,6 +1397,15 @@
+                          "proxy: HTTP: received interim %d response",
+                          r->status);
+         }
++
++        /* Neal's SLA Hack to suppress errors */
++        /* Altered 1/19/2010 to preserve 3xx & 4xx status codes */
++        if (!((r->status > 199) && (r->status < 500)) && ((r->status != DONE) && (r->status != OK)) && ap_proxy_suppress_errors_check(r)) {
++            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
++                             "proxy: ((tRP SLAHack)) found bad response, throwing HTTP_BAD_GATEWAY");
++            return ap_proxyerror(r, HTTP_BAD_GATEWAY, "Suppressing error");
++        }
++
+         /* Moved the fixups of Date headers and those affected by
+          * ProxyPassReverse/etc from here to ap_proxy_read_headers
+          */
+@@ -1589,6 +1606,184 @@
+     return OK;
+ }
+ 
++/* Neal's SLA Hack This really should be in proxy_util or utilize some built in function 
++ * Handles the on-error default response 
++ * Improvements?:
++ *   - setup redirect/forward to mod_asis?
++ *   - do a std redirection?
++ */
++static int ap_proxytimeout_default_response(request_rec *r,  const char *headers_path, const char *document_path)
++{
++    apr_status_t rv;
++    apr_file_t *hfd = NULL;
++    char *headers_filename = NULL;
++    
++    if ((headers_path == NULL) || (document_path == NULL)) 
++       return OK; //HTTP_BAD_REQUEST?
++
++    headers_filename = apr_psprintf(r->pool, "%s%s", ap_document_root(r), headers_path);
++
++    r->uri = apr_psprintf(r->pool, "%s", document_path);
++    r->filename = apr_psprintf(r->pool, "%s%s", ap_document_root(r), document_path);
++
++    if ((rv = apr_file_open(&hfd, headers_filename, APR_READ, APR_OS_DEFAULT, r->pool)) != APR_SUCCESS) {
++        ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
++                    "error reading file: %s", headers_filename);
++        return OK; //HTTP_BAD_REQUEST?
++    }
++
++    ap_scan_script_header_err(r,hfd, NULL);
++    apr_file_close(hfd);
++
++    /* Internal redirect -- fake-up a pseudo-request */
++    //r->status = HTTP_OK;
++
++    /* This redirect needs to be a GET no matter what the original
++     * method was.
++     */
++    r->method = apr_pstrdup(r->pool, "GET");
++    r->method_number = M_GET;
++
++    ap_internal_redirect_handler(document_path, r);
++        
++    return OK;
++}
++
++/* Neal's SLA Hack This really should be in proxy_util or utilize some built in function 
++ * Hat-tip Ronald Park for example implementation in apache 2.0.63 
++ */
++static int ap_proxy_connection_setup_custom_timeout(request_rec *r,  proxy_conn_rec *backend, 
++                        apr_interval_time_t * new_timeout, apr_interval_time_t * old_timeout)
++{
++        // Ronald Park's comments from an apache 2.0 patch
++        // pre_connection code sets the socket timeout as
++        // the value of Timeout which is the timeout of the
++        // original request; by the time that is hit, our client
++        // has already been given a timeout
++        //
++        // instead, we'll look to see if an env var, proxy-timeout,
++        // has been set: if so, we use it; otherwise, we use
++        // the setting for ProxyTimeout (if set); (otherwise, we
++        // will stick with the value of Timeout.)
++        const char* tbl_timeout;
++
++        tbl_timeout = apr_table_get(r->subprocess_env, "proxy-timeout");
++        if (tbl_timeout == NULL) {
++            tbl_timeout = apr_table_get(r->notes, "proxy-timeout");
++        }
++        if (tbl_timeout != NULL) {
++            int int_timeout = atoi(tbl_timeout);
++            int factor = 1;
++            if (int_timeout > 0) {
++               if(strstr(tbl_timeout,"us") != NULL)
++                  factor = 1;
++               else if(strstr(tbl_timeout,"ms") != NULL)
++                  factor = (APR_USEC_PER_SEC/1000);
++               else //assume seconds
++                  factor = APR_USEC_PER_SEC;
++
++               *new_timeout = apr_time_make(0,int_timeout * factor);
++            }
++        }
++        else //no setting
++	   return OK;   
++        
++        if (*new_timeout > 0) {
++            apr_socket_timeout_get(backend->sock, old_timeout);
++            apr_socket_timeout_set(backend->sock, *new_timeout);
++            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
++                     "proxy: ((tRP SLAHack)) setting request timeout (%d) from (%d)", (int)*new_timeout, (int)*old_timeout);
++        }
++        else
++        {   
++            apr_interval_time_t ct = -1;
++            apr_socket_timeout_get(backend->sock, &ct);
++            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
++                     "proxy: ((tRP SLAHack)) keeping timeout (%d) new: (%d)", (int)ct, (int)*new_timeout);
++        }
++
++	return OK;   
++}
++
++/* Neal's SLA Hack This really should be in proxy_util or utilize some built in function 
++ * check for error suppression = true on this request
++ */
++static int ap_proxy_suppress_errors_check(request_rec *r)
++{
++    //on-error suppress errors switch
++    const char* tbl_error_suppress = NULL;
++    tbl_error_suppress = apr_table_get(r->subprocess_env, "error-suppress");
++    if (tbl_error_suppress == NULL) {
++        tbl_error_suppress = apr_table_get(r->notes, "error-suppress");
++    }
++
++    if((tbl_error_suppress != NULL) && (strcasecmp(tbl_error_suppress, "true")==0))
++       return 1;
++    else
++       return 0;
++}
++
++/* Neal's SLA Hack This really should be in proxy_util or utilize some built in function 
++ * perform any custom error handling for this request 
++ */
++static int ap_proxytimeout_custom_error_handler(request_rec *r, int current_status)
++{
++    int new_status = 0;
++    int current_http_status = 0;
++    int new_http_status = 0;
++
++    if(current_status != OK)
++       current_http_status = current_status;
++    else
++       current_http_status = r->status;
++
++    //on-error suppress errors switch
++    const char* tbl_error_suppress = NULL;
++    tbl_error_suppress = apr_table_get(r->subprocess_env, "error-suppress");
++    if (tbl_error_suppress == NULL) {
++        tbl_error_suppress = apr_table_get(r->notes, "error-suppress");
++    }
++
++    if((tbl_error_suppress != NULL) && (strcasecmp(tbl_error_suppress, "true")==0)
++       && !((current_http_status > 199) && (current_http_status < 300))
++       && ((current_http_status != DONE) && (current_http_status != OK))){
++
++        const char* tbl_error_headers = NULL;
++        const char* tbl_error_document = NULL;
++
++        //on-error alternate headers
++        tbl_error_headers = apr_table_get(r->subprocess_env, "error-headers");
++        if (tbl_error_headers == NULL) {
++            tbl_error_headers = apr_table_get(r->notes, "error-headers");
++        }
++
++        //on-error alternate document
++        tbl_error_document = apr_table_get(r->subprocess_env, "error-document");
++        if (tbl_error_document == NULL) {
++            tbl_error_document = apr_table_get(r->notes, "error-document");
++        }
++
++        //augment response with new headers and document
++        if ((tbl_error_headers != NULL) && (tbl_error_document != NULL)) {
++	     new_status = ap_proxytimeout_default_response(r, tbl_error_headers, tbl_error_document);
++        }
++        else { // just suppress the error w/ 200 and no content
++             r->content_type = "text/plain"; 
++             ap_custom_response(r, HTTP_OK, "");
++             new_http_status = HTTP_OK;
++             r->status = new_http_status; 
++             new_status = OK;
++        }
++
++        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "(tRP SLAHack) suppressed (%d), returned (%d) for [%s]",
++                 current_http_status, r->status, ((r->uri == NULL)? "NULL" : r->uri));
++    }
++    else //do nothing
++        new_status = current_status;
++
++    return new_status;
++}
++
+ /*
+  * This handles http:// URLs, and other URLs using a remote proxy over http
+  * If proxyhost is NULL, then contact the server directly, otherwise
+@@ -1610,6 +1805,8 @@
+     const char *u;
+     proxy_conn_rec *backend = NULL;
+     int is_ssl = 0;
++    apr_interval_time_t old_timeout = 0;
++    apr_interval_time_t new_timeout = 0;
+ 
+     /* Note: Memory pool allocation.
+      * A downstream keepalive connection is always connected to the existence
+@@ -1702,6 +1899,14 @@
+             goto cleanup;
+     }
+ 
++    /* Step Three b: Neal's SLA Hack - enforce URL specific proxy timeout */
++    if (backend->connection) {
++        old_timeout = (conf->timeout_set) ? conf->timeout : 0;
++        new_timeout = 0;
++
++        ap_proxy_connection_setup_custom_timeout(r, backend, &new_timeout, &old_timeout);
++    }
++
+     /* Step Four: Send the Request */
+     if ((status = ap_proxy_http_request(p, r, backend, backend->connection,
+                                         conf, uri, url, server_portstr)) != OK)
+@@ -1716,11 +1921,28 @@
+     /* Step Six: Clean Up */
+ 
+ cleanup:
++    /* Step Six a: Neal's SLA Hack - Enforce any custom error handling (on timeout or throwing HTTP_BAD_GATEWAY) */
++    if (backend) {
++        if (status != OK) {
++        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "proxy: ((tRP SLAHack)) status before ap_proxytimeout_custom_error_handler() (%d), http (%d)",status, r->status);
++        status = ap_proxytimeout_custom_error_handler(r, status);
++        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "proxy: ((tRP SLAHack)) status after ap_proxytimeout_custom_error_handler() (%d), http (%d)",status, r->status);
++        }
++    }
++
++    /* Step Six b: - Neal's SLA Hack - Reset before the connection is released */
++    if (backend) {
++       if((new_timeout > 0) && (old_timeout != new_timeout) && (old_timeout > 0))
++          apr_socket_timeout_set(backend->sock, old_timeout);
++    }
++
++    /* Step Six c: Clean Up */
+     if (backend) {
+         if (status != OK)
+             backend->close = 1;
+         ap_proxy_http_cleanup(proxy_function, r, backend);
+     }
++
+     return status;
+ }
+ 
