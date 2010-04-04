@@ -46,7 +46,7 @@ var xxx_api_data={data:[]}; /* ERR */
 There are four environment variables the SLA hack looks for:
 
     * proxy-timeout: - time in seconds or milliseconds to wait until timing out
-    * error-suppress: - true/false switch on suppressing all non 2xx errors from the backend.
+    * error-suppress: - true/false switch on suppressing all non 2xx and 3xx errors from the backend.
     * error-headers: - file of syntax correct HTTP headers to return to the client
     * error-document: - file of content body to be returned to the client
 
@@ -65,3 +65,6 @@ apache-dev list..hopefully with responses suggesting improvements.
 Notes as of Jan 19:
 - This mod has been in production for 6+ months and we love it.
 - A code modification has been made to preserve 3xx (redirect) and 4xx (client errors) response codes.
+
+Notes as of April 3:
+- added a patch for newer version of http: httpd-2.2.3-31.2.el5_4_centos
