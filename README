@@ -29,7 +29,7 @@ apache 2.0.x here and here.
 The below example is a rewrite rule that makes no changes to the URL itself for a JS 
 API presumably returning data in JSON.
 
-RewriteRule ^/api/(.*).js\?*(.*)$ http://backendproxy/api/$1.js?$2 [P,QSA,E=proxy-timeout:900ms,E=error-suppress:true,E=error-headers:/errorapi.js.HTTP,E=error-document:/errorapi.js]
+RewriteRule ^/api/(.*).js\?*(.*)$ http://backendproxy/api/$1.js?$2 [P,QSA,E=proxy-timeout:900ms,E=error-suppress:true,E=server-pattern:Apache,E=allowed-statuses:2xx,E=error-headers:/errorapi.js.HTTP,E=error-document:/errorapi.js]
 
 With the SLA enforcement modifications enabled, the URL will return data from the 
 backend system within 900ms or a timeout occurs. At this point apache will stop 
@@ -46,25 +46,59 @@ var xxx_api_data={data:[]}; /* ERR */
 There are four environment variables the SLA hack looks for:
 
     * proxy-timeout: - time in seconds or milliseconds to wait until timing out
-    * error-suppress: - true/false switch on suppressing all non 2xx and 3xx errors from the backend.
+    * error-suppress: - true/false switch on suppressing all errors from the backend.
+    * allowed-statuses: - list of allowed HTTP statuses to accept
+                        - default is 2xx;3xx;4xx
+    * server-pattern:  - a (sub)string that must be contained in Server field of the HTTP response
+                       - implemented with strcasestr for substring match
     * error-headers: - file of syntax correct HTTP headers to return to the client
     * error-document: - file of content body to be returned to the client
 
+Note on allowed-statuses directive:
+  This can be a list of individual status codes like '200;301;404' etc.
+  2xx means the entire class of 200 to 299 codes are allowed
+  Default value of '2xx;3xx;4xx' allows all 200 to 499 codes. 
+  Avoid spaces and commas in the pattern - NOT TESTED
+  If the directive is left off the RewriteRule, then the default is used. 
+  This directive is ignored if the error-suppress=false
+
+Note on server-pattern:
+  This is a substring to be contained in the 'Server' HTTP response header field.
+  Example below
+     - Server: Apache/2.2.3 (CentOS)
+     - server-pattern:ABC will NOT match
+     - server-pattern:Apache will match
+  This is very usefull in a public Cloud like AWS where you might just be proxing off to an IP/Host not controlled by you!
+  It is recommeneded that you update your back-end service to have a unique substring in its Server response header.
+  Avoid spaces and commas in the pattern - NOT TESTED
+  If the directive is left off the RewriteRule, then no check is done.
+  This directive is ignored if the error-suppress=false
+  
 Leaving off the proxy-timeout will only suppress errors from the backend after the global 
 timeout occurs. Leaving off error-suppress:true will ensure that the 5xx timeout error from
- mod_proxy_http is returned intact to the client.
+ mod_proxy_http is returned intact to the client. No other error supression is done.
 
-There are two versions checked into github for Ubuntu 9.04's apache2 2.2.11 and Centos el5.2's 
-httpd 2.2.3-11. It's advisable to diff the changes with the 'stock' file and likely re-do hack 
+There are multiple versions checked into github for Ubuntu 9.04's apache2 2.2.11 and Centos el5's.
+It's advisable to diff the changes with the 'stock' file and likely re-do hack 
 code in your version of apache 2.2. See Ron Park's code for 2.0.x and fold in the other mods 
 supporting error-suppress etc.
 
-The hack is being tested in a production environment, stay tuned. This will get posted to the 
-apache-dev list..hopefully with responses suggesting improvements. 
+The hack is has been tested in a production environment for almost 1 year.  Approximately 50B hits have passed through this code.
 
-Notes as of Jan 19:
+Patches were created like so:
+diff -Naur mod_proxy_http.c.STOCK mod_proxy_http.c > mod_proxy_http.c.diff
+
+Notes as of Jul 14, 2009:
+- First version committed
+
+Notes as of Jan 19, 2010:
 - This mod has been in production for 6+ months and we love it.
 - A code modification has been made to preserve 3xx (redirect) and 4xx (client errors) response codes.
 
-Notes as of April 3:
+Notes as of April 3, 2010:
 - added a patch for newer version of http: httpd-2.2.3-31.2.el5_4_centos
+
+Notes as of June 28, 2010:
+- add parameterization of allowed status codes ; 2xx,3xx & 4xx are default 
+- add Server response header pattern check
+

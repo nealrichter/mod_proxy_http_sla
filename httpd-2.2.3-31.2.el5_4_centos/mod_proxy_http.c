@@ -1399,8 +1399,11 @@ apr_status_t ap_proxy_http_process_response(apr_pool_t * p, request_rec *r,
         }
 
         /* Neal's SLA Hack to suppress errors */
-        /* Altered 1/19/2010 to preserve 3xx & 4xx status codes */
-        if (!((r->status > 199) && (r->status < 500)) && ((r->status != DONE) && (r->status != OK)) && ap_proxy_suppress_errors_check(r)) {
+        /* Altered 6/28/2010 
+             - add parameterization of allowed status codes ; 2xx,3xx & 4xx are default 
+             - add Server response header pattern check
+        */
+        if (ap_proxy_suppress_errors_check(r) && ((r->status != DONE) && (r->status != OK))) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
                              "proxy: ((tRP SLAHack)) found bad response, throwing HTTP_BAD_GATEWAY");
             return ap_proxyerror(r, HTTP_BAD_GATEWAY, "Suppressing error");
@@ -1705,22 +1708,81 @@ static int ap_proxy_connection_setup_custom_timeout(request_rec *r,  proxy_conn_
 	return OK;   
 }
 
-/* Neal's SLA Hack This really should be in proxy_util or utilize some built in function 
- * check for error suppression = true on this request
+/* Neal's SLA Hack  
+ * check for error suppression = true on this request 
+   Altered 6/28/2010 
+             - add parameterization of allowed status codes ; 2xx,3xx & 4xx are default 
+             - add Server response header pattern check
  */
 static int ap_proxy_suppress_errors_check(request_rec *r)
 {
     //on-error suppress errors switch
-    const char* tbl_error_suppress = NULL;
-    tbl_error_suppress = apr_table_get(r->subprocess_env, "error-suppress");
-    if (tbl_error_suppress == NULL) {
-        tbl_error_suppress = apr_table_get(r->notes, "error-suppress");
+    const char* conf_error_suppress = NULL;
+    conf_error_suppress = apr_table_get(r->subprocess_env, "error-suppress");
+    if (conf_error_suppress == NULL) {
+        conf_error_suppress = apr_table_get(r->notes, "error-suppress");
     }
 
-    if((tbl_error_suppress != NULL) && (strcasecmp(tbl_error_suppress, "true")==0))
-       return 1;
-    else
-       return 0;
+    if(!((conf_error_suppress != NULL) && (strcasecmp(conf_error_suppress, "true")==0)))
+       return 0; //not active, return no error
+
+    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
+                             "proxy: ((tRP SLAHack)) ap_proxy_suppress_errors_check() - status[%d]", r->status);
+
+    //fetch Server header
+    const char *server_header = NULL;
+    if ((server_header = apr_table_get(r->headers_out, "Server"))) {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
+                             "proxy: ((tRP SLAHack)) ap_proxy_suppress_errors_check() - Server[%s]", server_header);
+    }
+
+    //fetch server-pattern
+    const char* conf_server_pattern = NULL;
+    conf_server_pattern = apr_table_get(r->subprocess_env, "server-pattern");
+    if (conf_server_pattern == NULL) {
+        conf_server_pattern = apr_table_get(r->notes, "server-pattern");
+    }
+
+    //test server-pattern
+    if((server_header != NULL) && (conf_server_pattern != NULL) && (strcasestr(server_header, conf_server_pattern)==NULL))
+    {
+       ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
+                             "proxy: ((tRP SLAHack)) ERROR [%s] does not substring match [%s]", server_header,conf_server_pattern);
+       return 1; //fail, return error
+    }
+
+    //fetch allowed-statuses
+    const char* conf_allowed_statuses = NULL;
+    conf_allowed_statuses = apr_table_get(r->subprocess_env, "allowed-statuses");
+    if (conf_allowed_statuses == NULL) {
+        conf_allowed_statuses = apr_table_get(r->notes, "allowed-statuses");
+    }
+
+    //test allowed-statuses
+    if((conf_allowed_statuses != NULL) && ((r->status != DONE) && (r->status != OK)))
+    {
+       const char * status_str = apr_psprintf(r->pool, "%d", r->status);
+       const char * status_class = apr_psprintf(r->pool, "%dxx", (int)(r->status/100));
+
+       ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
+                             "proxy: ((tRP SLAHack)) allowed-statuses[%s] vs [%s] or [%s]", conf_allowed_statuses, status,status_class);
+
+       if( (status_str != NULL)   && (strcasestr(conf_allowed_statuses,status_str)==NULL) &&
+           (status_class != NULL) && (strcasestr(conf_allowed_statuses,status_class)==NULL) )
+       {
+          ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
+                             "proxy: ((tRP SLAHack)) ERROR [%d] does not match [%s]", r->status,conf_allowed_statuses);
+          return 1; //fail, return error
+       }
+    }
+    else if(!((r->status > 199) && (r->status < 500)))
+    {
+          ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
+                             "proxy: ((tRP SLAHack)) ERROR [%d] does not match [%s] (default)", r->status,"2xx;3xx;4xx");
+          return 1; //fail, return error
+    }
+
+    return 0;  //no error
 }
 
 /* Neal's SLA Hack This really should be in proxy_util or utilize some built in function 
