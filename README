@@ -86,7 +86,7 @@ supporting error-suppress etc.
 The hack is has been tested in a production environment for almost 1 year.  Approximately 50B hits have passed through this code.
 
 Patches were created like so:
-diff -Naur mod_proxy_http.c.STOCK mod_proxy_http.c > mod_proxy_http.c.diff
+diff -u mod_proxy_http.c.STOCK mod_proxy_http.c > mod_proxy_http.c.diff
 
 Notes as of Jul 14, 2009:
 - First version committed
