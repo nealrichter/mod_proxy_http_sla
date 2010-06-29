@@ -2033,7 +2033,7 @@ static int ap_proxy_suppress_errors_check(request_rec *r)
        const char * status_class = apr_psprintf(r->pool, "%dxx", (int)(r->status/100));
 
        ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
-                             "proxy: ((tRP SLAHack)) allowed-statuses[%s] vs [%s] or [%s]", conf_allowed_statuses, status,status_class);
+                             "proxy: ((tRP SLAHack)) allowed-statuses[%s] vs [%s] or [%s]", conf_allowed_statuses, status_str, status_class);
 
        if( (status_str != NULL)   && (strcasestr(conf_allowed_statuses,status_str)==NULL) &&
            (status_class != NULL) && (strcasestr(conf_allowed_statuses,status_class)==NULL) )
