@@ -102,3 +102,6 @@ Notes as of June 28, 2010:
 - add parameterization of allowed status codes ; 2xx,3xx & 4xx are default 
 - add Server response header pattern check
 
+Notes as of November 3, 2010
+- add millisecond capabilities to ProxyPass timeout directive
+- add millisecond capabilities to ProxyTimeout directive
