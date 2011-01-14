@@ -1,6 +1,6 @@
---- mod_proxy_http.c.STOCK	2010-03-31 17:15:14.000000000 -0600
-+++ mod_proxy_http.c	2010-06-29 14:43:56.000000000 -0600
-@@ -24,6 +24,14 @@
+--- httpd-2.2.3/modules/proxy/mod_proxy_http.c~	2011-01-14 11:34:03.000000000 -0800
++++ httpd-2.2.3/modules/proxy/mod_proxy_http.c	2011-01-14 11:37:49.000000000 -0800
+@@ -25,6 +25,14 @@
                                            request_rec *r,
                                            proxy_conn_rec *backend);
  
@@ -15,9 +15,9 @@
  /*
   * Canonicalise http-like URLs.
   *  scheme is the scheme for the URL
-@@ -1389,6 +1397,18 @@
-                          "proxy: HTTP: received interim %d response",
-                          r->status);
+@@ -1659,6 +1667,18 @@
+                              "undefined proxy interim response policy");
+             }
          }
 +
 +        /* Neal's SLA Hack to suppress errors */
@@ -34,7 +34,7 @@
          /* Moved the fixups of Date headers and those affected by
           * ProxyPassReverse/etc from here to ap_proxy_read_headers
           */
-@@ -1589,6 +1609,243 @@
+@@ -1876,6 +1896,243 @@
      return OK;
  }
  
@@ -278,7 +278,7 @@
  /*
   * This handles http:// URLs, and other URLs using a remote proxy over http
   * If proxyhost is NULL, then contact the server directly, otherwise
-@@ -1610,6 +1867,8 @@
+@@ -1897,6 +2154,8 @@
      const char *u;
      proxy_conn_rec *backend = NULL;
      int is_ssl = 0;
@@ -287,7 +287,7 @@
  
      /* Note: Memory pool allocation.
       * A downstream keepalive connection is always connected to the existence
-@@ -1702,6 +1961,14 @@
+@@ -1984,6 +2243,14 @@
              goto cleanup;
      }
  
@@ -302,7 +302,7 @@
      /* Step Four: Send the Request */
      if ((status = ap_proxy_http_request(p, r, backend, backend->connection,
                                          conf, uri, url, server_portstr)) != OK)
-@@ -1716,11 +1983,28 @@
+@@ -1998,11 +2265,28 @@
      /* Step Six: Clean Up */
  
  cleanup:
@@ -330,4 +330,4 @@
 +
      return status;
  }
- 
+ static apr_status_t warn_rx_free(void *p)
