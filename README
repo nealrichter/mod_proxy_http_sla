@@ -105,3 +105,7 @@ Notes as of June 28, 2010:
 Notes as of November 3, 2010
 - add millisecond capabilities to ProxyPass timeout directive
 - add millisecond capabilities to ProxyTimeout directive
+
+Notes as of January 14, 2011
+- works unchanged on httpd-2.2.3-48 codebase
+
